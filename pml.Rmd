@@ -1,0 +1,33 @@
+---
+title: "Classification of Exercise Quality for the Weight Lifting Exercise Dataset"
+author: "Cristian Bologa"
+date: "August 20, 2015"
+output: html_document
+---
+
+## Executive Summary
+The goal of this project is to model and predict the quality of execution of weight lifting exercises using data from accelerometers attached to the human subject's body and dumbbell.
+
+## Exploratory data analysis
+The Weight Lifting Exercise dataset contains data regarding the quality of execution of weight lifting exercises and multiple accelerometer data recorded on six participants while performing those exercises. The participants were asked to perform one set of ten repetions in five different fashions, one correct (class A) and four corresponding to different types of common mistakes (classes B, C, D and E). 
+
+```{r imports, echo=TRUE, message=FALSE}
+library(caret)
+library(doParallel)                       #library for parallel processing
+cl <- makeCluster(detectCores())          #detect number of available cores
+registerDoParallel(cl)                    #register the number of cores for parallel execution
+
+# Data was retrieved (once) and read locally (each time the HTML file was knitted) using the following commands
+# download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile="pml_training.csv", method="curl")
+# download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile="pml_testing.csv", method="curl")
+```
+
+Although due to the word limits imposed on this report the results are not presented here, an exploratory data analysis was performed for the files provided for this data set using the `dim`, `head`, `str`, and `summary` commands.
+
+## Model building and selection
+
+## Inference and quantification of uncertainty
+
+## External prediction
+
+## Conclusions
