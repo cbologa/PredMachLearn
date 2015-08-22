@@ -1,17 +1,14 @@
-# Practical Machine Learning project assignment
+### Practical Machine Learning project assignment
 
-*Note to reviewers:* 
+**Note to reviewers:**
 
 Thank you for reviewing my project assignment for the Practical Machine Learning Class. 
 
-The html project report is available at
+Here you can access:
 
-http://cbologa.github.io/PredMachLearn/pml.html
+* the [html](http://cbologa.github.io/PredMachLearn/pml.html) project report
+* the [Rmd](https://github.com/cbologa/PredMachLearn/blob/master/pml.Rmd) file used to generate the above report 
+* and the same file in [raw](https://raw.githubusercontent.com/cbologa/PredMachLearn/master/pml.Rmd) format.
 
-the Rmd file used to generate this report can be seen at
 
-https://github.com/cbologa/PredMachLearn/blob/master/pml.Rmd
 
-and in raw format here.
-
-https://raw.githubusercontent.com/cbologa/PredMachLearn/master/pml.Rmd
