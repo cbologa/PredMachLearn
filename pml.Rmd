@@ -6,28 +6,143 @@ output: html_document
 ---
 
 ## Executive Summary
-The goal of this project is to model and predict the quality of execution of weight lifting exercises using data from accelerometers attached to the human subject's body and dumbbell.
+The goal of this analysis is to model and predict the quality of execution of weight lifting exercises using data from accelerometers attached to the human subject's body and dumbbell. After cleaning the training dataset by removing the variables consisting mostly of missing values and the highly correlated variables, this dataset was split 70:30 in internal training:testing datasets. A collection of models were built using the internal training dataset and their performance was evaluated by comparing treir predictions with the known outcome values from the internal testing set, while also measuring the computational cost needed to generate those models. The best performing models were used to predict the unknown outcomes for the 20 observations from the external testing set, which after submission to the Coursera server were all found to be correct.
 
-## Exploratory data analysis
-The Weight Lifting Exercise dataset contains data regarding the quality of execution of weight lifting exercises and multiple accelerometer data recorded on six participants while performing those exercises. The participants were asked to perform one set of ten repetions in five different fashions, one correct (class A) and four corresponding to different types of common mistakes (classes B, C, D and E). 
+## Exploratory data analysis and data preprocessing
+The Weight Lifting Exercise dataset contains data regarding the quality of execution of weight lifting exercises and multiple accelerometer data recorded on six participants while performing those exercises. The participants were asked to perform one set of ten repetions in five different fashions, one correct (class A) and four corresponding to different types of common mistakes (classes B, C, D and E). The two data files provided for this assignment (`pml-training.csv` and `pml-testing.csv`) were downloaded once and read locally multiple times, each time this html report was generated. Also in order to reduce the time needed for building all models and generation of this report, parallel processing was enabled by using the R package `doParallel` which works on Windows, Mac, and Linux computers.
 
-```{r imports, echo=TRUE, message=FALSE}
+```{r imports, echo=TRUE, message=FALSE, results='markup'}
 library(caret)
+# use parallel processing for faster execution (when hardware resources permit)
 library(doParallel)                       #library for parallel processing
 cl <- makeCluster(detectCores())          #detect number of available cores
 registerDoParallel(cl)                    #register the number of cores for parallel execution
 
-# Data was retrieved (once) and read locally (each time the HTML file was knitted) using the following commands
-# download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile="pml_training.csv", method="curl")
-# download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile="pml_testing.csv", method="curl")
+# Download data files (once) and read them locally each time the HTML file is knitted 
+for (destfile in c("pml-training.csv", "pml-testing.csv")) 
+  if(!file.exists(destfile)) 
+    download.file(paste0("http://d396qusza40orc.cloudfront.net/predmachlearn/",destfile),
+                  destfile=destfile, method="auto")
+pml_train <- read.csv("pml-training.csv",na.strings=c("NA","#DIV/0!",""))
+pml_test <- read.csv("pml-testing.csv",na.strings=c("NA","#DIV/0!",""))
+# Show the sizes of the training and testing datasets
+dim(pml_train); dim(pml_test)
 ```
 
-Although due to the word limits imposed on this report the results are not presented here, an exploratory data analysis was performed for the files provided for this data set using the `dim`, `head`, `str`, and `summary` commands.
+Both datasets provided for this project assignment contain 160 variables (columns), while the number of observations (rows) are 19622 for the training and 20 for the testing dataset. Although due to the word limits imposed on this report the results are not presented here, an brief exploratory data analysis was performed for the two datasets using the `head`, `str`, and `summary` commands. The results of running these commands show that:  
+
+1. All variable (column) names are the same in both datasets, except for the last one. The last variable in the *training* dataset (classe) encodes how the exercise was performed - correct (A) or different types of common mistakes (classes B, C, D and E). The last one in the *testing* dataset (problem_id) contains the numbers 1 to 20 coresponding to the problems in the Prediction Assignment for which we were expected to submit a predicted class.
+2. Many variables in the *training* dataset contain a large number (>95%) of missing values. As those variables contain ONLY missing values in the *testing* dataset, these variables were removed from the training dataset before building machine learning models.
+3. The first 7 variables in the datasets are just bookkeeping ones, that do not contain information about the quality of exercise, and these were removed too.
+
+```{r removeNAbookkeeping, echo=TRUE}
+# remove variables containing more than 90% of missing values
+clean1 <- pml_train[,colSums(is.na(pml_train)) < nrow(pml_train) * 0.9]
+# remove first seven bookkeeping variables
+clean2 <- clean1[,-c(1:7)]
+dim(clean2)
+```
+
+As some machine learning methods do not perform well if the training dataset contains variables having low variance, the function `nearZeroVar` from the `caret` package was used to try to identify such variables.
+
+```{r nzv, echo=TRUE}
+# try to identify low variance in the first 52 remaining dependent variables
+nzv <- nearZeroVar(clean2[,1:52], saveMetrics= TRUE)
+nzv$nzv
+```
+
+None of the 52 remaining dependent variables have very low variance and all were kept for later processing. At the same time, while there are a few machine learning methods that work well with correlated predictors (such as `pls`), many other methods need a lower level of correlation between the dependent variables in order to perform well, and some of these highly correlated variables were also removed.
+
+```{r cor, echo=TRUE}
+# compute the correlation matrix between descriptors
+descrCor <- cor(clean2[,1:52])
+# find columns to remove in order to reduce pair-wise correlations
+highlyCorDescr <- findCorrelation(descrCor, cutoff = .75)
+# remove selected columns
+clean3 <- clean2[,-highlyCorDescr]
+dim(clean3); names(clean3)
+```
+This way, the original set of 160 variables was reduced to 32 - a dependent one (classe) and 31 predictors, which will be used later for building all machine learning models.
 
 ## Model building and selection
 
-## Inference and quantification of uncertainty
+In order to be able to make an unbiased estimation of the out of sample error for all models, this dataset was further divided 70:30 into an internal *training* dataset and an internal *testing* dataset. The purpose of the internal *training* dataset (containing 13737 obsevations) is to be used in model generation, while the internal *testing* dataset (5885 observations) will be used to estimate the out of sample error and prediction accuracy for all generated models. Based on these results, the best performing models will be later used for predicting the unknown `classe` value for the 20 observations from the external *testing* dataset.
+
+```{r datasplit, echo=TRUE}
+set.seed(123)
+inTrain <- createDataPartition(y=clean3$classe,p=0.7,list=FALSE)
+training <- clean3[inTrain,]
+testing <- clean3[-inTrain,]
+dim(training); dim(testing)
+```
+
+In order to speed up the process of model generation and reduce the memory needed, some parameters in the `trainControl` and `train` functions from the `caret` package were modified from their default values. The main change consists in replacing caret's default bootstrap resampling method with **a 7-fold simple crossvalidation (without repeats)**. The times needed to produce these models on a machine with 4 physical cores (hyperthreaded to 8 virtual cores) are listed below. An additional preprocessing step was to use the scaling to unit variance for all predictor variables. 
+
+```{r models, echo=TRUE, message=FALSE, results='hide'}
+# set the internal resampling method to simple 7-fold crossvalidation
+fitControl <- trainControl(method="cv",number=7)
+# create a list for storing all fitted models
+m <- list()
+# select the caret methods to be used for generating models
+modelList <- c("rf", "C5.0", "xgbTree", "treebag", "gbm", "qda", "nb", "rpart")
+# create a data frame for storing execution times for each model
+times <- data.frame(Model=modelList)
+for (mod in modelList){
+  # generate and store models
+  m[[mod]] <- train(classe ~ ., data=training, method=mod, trControl=fitControl,
+                    preProc = c("center", "scale"), metric= "Accuracy")
+  # extract execution times for each model
+  times$user[times$Model==mod] <- m[[mod]]$times$everything[["user.self"]]
+  times$system[times$Model==mod] <- m[[mod]]$times$everything[["sys.self"]]
+  times$elapsed[times$Model==mod] <- m[[mod]]$times$everything[["elapsed"]]
+}
+```
+```{r times, echo=TRUE, results='markup'}
+print(times)
+```
+
+## Model performance and quantification of uncertainty
+
+In order to estimate the accuracy and the out of sample error, the internal testing dataset was used. The observations in this set were not used in model generation and all have a known *classe* assignment, which can be used for comparison with the predicted one.
+
+```{r inference, echo=TRUE, message=FALSE, warning=FALSE}
+# create a dataframe to store statistical results
+results <- data.frame(Model=modelList)
+p <- list(); c <- list()
+for (mod in modelList){
+  # predict the classe values for the internal testing set
+  p[[mod]] <- predict(m[[mod]],testing)
+  # compare with the observed values and compute the confusion matrix
+  c[[mod]] <- confusionMatrix(p[[mod]],testing$classe)
+  # extract statistical parameters for each model 
+  results$Accuracy[results$Model==mod] <- c[[mod]]$overall[["Accuracy"]]
+  results$Kappa[results$Model==mod] <- c[[mod]]$overall[["Kappa"]]
+  results$AccuracyLower[results$Model==mod] <- c[[mod]]$overall[["AccuracyLower"]]
+  results$AccuracyUpper[results$Model==mod] <- c[[mod]]$overall[["AccuracyUpper"]]
+  results$AccuracyPValue[results$Model==mod] <- c[[mod]]$overall[["AccuracyPValue"]]
+  #results$McnemarPValue[results$Model==mod] <- c[[mod]]$overall[["McnemarPValue"]]
+}
+print(results)
+```
+
+The results show that the best performing models (rf, C5.0, xgbTree) have an estimated accuracy of more than 98% and a corresponding estimated out of sample error of less than 2%. These results increase our confidence that they will perform well in correctly predicting the *classe* assignment for the 20 observations in the external testing dataset.
 
 ## External prediction
+The models generated above were used to predict the *classe* assignment for the external testing dataset and the results are shown in the table below.
+
+```{r prediction, echo=TRUE, message=FALSE, warning=FALSE}
+# create a dataframe to store external prediction results
+prediction <- data.frame(Model=modelList)
+# compute and store predictions for the external data set
+for (mod in modelList){
+  prediction$Prediction[prediction$Model==mod] <- list(as.character(predict(m[[mod]],pml_test)))
+}  
+print(prediction)
+# shut down the parallel cluster
+stopCluster(cl)
+```
+
+The results show that the top performing models (Random Forests, C5.0, Extreme Gradient Boosting) produce completely identical prediction results for all 20 observations from the external data set, which after submission were confirmed to be all correct. The less accurate models models have one or more prediction errors in the external testing set, with a trend of increased number of errors with lower model accuracy.
 
 ## Conclusions
+`Caret` is a vey powerful and flexible package for building predictive models which implements a general class of built-in functions that can be used across all modeling methods. These functions allow testing of a wide variety of machine learning methods to identify the best performing ones for the problem of interest, which can then be used for model generation and external prediction.
